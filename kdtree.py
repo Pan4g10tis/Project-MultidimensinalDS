@@ -1,6 +1,7 @@
 import pandas as pd
 import math
 from datetime import datetime
+import time
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.neighbors import NearestNeighbors
 
@@ -111,12 +112,12 @@ def range_query(node, range_min, range_max, depth=0, results=None):
 
 
 # Filter for the categorical arguments
-def filter_by_categorical_inputs(results, categorical_inputs, data):
+def filter_by_categorical_inputs(results, categorical_inputs, attribute_indices):
     filtered_results = []
     for result in results:
         match = True
         for attribute, values in categorical_inputs.items():
-            idx = list(data.columns).index(attribute)
+            idx = attribute_indices[attribute]
             if result[idx] not in values:
                 match = False
                 break
@@ -126,9 +127,9 @@ def filter_by_categorical_inputs(results, categorical_inputs, data):
     return filtered_results
 
 
-def lsh_query(words, N, filtered_results, data):
+def lsh_query(words, N, filtered_results, review_index):
     # Extract reviews and full data from the filtered results
-    reviews_to_hash = [res[list(data.columns).index('review')] for res in filtered_results]
+    reviews_to_hash = [res[review_index] for res in filtered_results]
     full_data = filtered_results  # Full rows of data corresponding to the reviews
 
     # Vectorize these reviews
@@ -228,10 +229,14 @@ def kdtree_main():
     range_min = [x if x is not None else -math.inf for x in range_min]
     range_max = [x if x is not None else math.inf for x in range_max]
 
+    start = time.time()
     results = range_query(kd_tree, range_min, range_max)
+    end = time.time()
+    length = end - start
 
     if categorical_inputs:
-        filtered_results = filter_by_categorical_inputs(results, categorical_inputs, data)
+        attribute_indices = {attribute: list(data.columns).index(attribute) for attribute in categorical_inputs}
+        filtered_results = filter_by_categorical_inputs(results, categorical_inputs, attribute_indices)
         results_to_hash = filtered_results
         print(f"Found {len(filtered_results)} results within the specified range and categorical inputs:")
         # for result in filtered_results:
@@ -242,6 +247,8 @@ def kdtree_main():
         # for result in results:
             # print(result)
 
+    print(length)
+
 
 '''
     # Get user input for words and N
@@ -249,7 +256,8 @@ def kdtree_main():
     top_n = int(input("Enter the number of top matching reviews to return: "))
 
     # Filter final results
-    final_results = lsh_query(search_words, top_n, results_to_hash, data)
+    review_index = list(data.columns).index('review')
+    final_results = lsh_query(search_words, top_n, results_to_hash, review_index)
     print(f"\nTop {top_n} results containing words {search_words}:")
     for result in final_results:
         print(result)
