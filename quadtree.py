@@ -1,5 +1,6 @@
 import pandas as pd
 import math
+import time
 from datetime import datetime
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.neighbors import NearestNeighbors
@@ -230,20 +231,25 @@ def octree_main():
     range_max = [x if x is not None else math.inf for x in range_max]
 
     # Perform Query
+    start = time.time()
     results = octree.range_query(range_min, range_max)
+    end = time.time()
+    length = end - start
 
     if categorical_inputs:
         attribute_indices = {attribute: list(data.columns).index(attribute) for attribute in categorical_inputs}
         filtered_results = filter_by_categorical_inputs(results, categorical_inputs, attribute_indices)
         results_to_hash = filtered_results
         print(f"Found {len(filtered_results)} results within the specified range and categorical inputs:")
-        for result in filtered_results:
-            print(result)
+        #for result in filtered_results:
+            #print(result)
     else:
         results_to_hash = results
         print(f"Found {len(results)} results within the specified range:")
-        for result in results:
-            print(result)
+        #for result in results:
+            #print(result)
+
+    print(length)
 
 
 # Uncomment to run
