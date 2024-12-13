@@ -148,6 +148,50 @@ def lsh_query(words, N, filtered_results, review_index):
     return [(full_data[idx], distances[0][i]) for i, idx in enumerate(indices[0])]
 
 
+def run_batch_queries(query_file, kd_tree, data):
+    total_time = 0
+
+    with open(query_file, "r") as file:
+        queries = file.readlines()
+
+    for query in queries:
+        try:
+            print(f"Processing query: '{query.strip()}'")
+            parts = query.strip().split(',')
+            if len(parts) != 6:
+                print(f"Skipping invalid query (wrong number of parts): {query.strip()}")
+                continue
+
+            usd_min, usd_max = float(parts[0]), float(parts[1])
+            rating_min, rating_max = float(parts[2]), float(parts[3])
+            date_min, date_max = map(lambda date: convert_date_to_numeric(date.strip()), parts[4:6])
+
+            print(f"Parsed USD range: {usd_min}, {usd_max}")
+            print(f"Parsed rating range: {rating_min}, {rating_max}")
+            print(f"Parsed date range: {date_min}, {date_max}")
+
+            range_min = [usd_min, rating_min, date_min]
+            range_max = [usd_max, rating_max, date_max]
+
+            range_min = [x if x is not None else -math.inf for x in range_min]
+            range_max = [x if x is not None else math.inf for x in range_max]
+
+            start = time.time()
+            results = range_query(kd_tree, range_min, range_max)
+            end = time.time()
+
+            query_time = end - start
+            total_time += query_time
+
+            print(f"Query: {query.strip()} -> Results: {len(results)} in {query_time:.4f} seconds")
+
+        except Exception as e:
+            print(f"Error processing query '{query.strip()}': {e}")
+
+    print(f"Total time for all queries: {total_time:.4f} seconds")
+    return total_time
+
+
 def kdtree_main():
     # File reading and Formating
     data = pd.read_csv("simplified_coffee.csv")
@@ -263,4 +307,23 @@ def kdtree_main():
         print(result)
 '''
 
-kdtree_main()
+# kdtree_main()
+
+
+def test_queries():
+    query_file = "queries.txt"  # Path to your file
+    data = pd.read_csv("simplified_coffee.csv")
+    data["review_date"] = data["review_date"].apply(convert_date_to_numeric)
+
+    # Build KD-tree
+    columns_for_splitting = ['100g_USD', 'rating', 'review_date']
+    points = list(data[columns_for_splitting].to_records(index=False))
+    full_data = data.values.tolist()
+    kd_tree = build_kd_tree(points, full_data)
+
+    # Run batch queries
+    total_execution_time = run_batch_queries(query_file, kd_tree, data)
+    print(f"Total execution time for all queries: {total_execution_time:.4f} seconds")
+
+
+test_queries()

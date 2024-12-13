@@ -253,4 +253,72 @@ def octree_main():
 
 
 # Uncomment to run
-octree_main()
+#octree_main()
+
+
+def run_batch_queries(query_file, octree, data):
+    total_time = 0
+
+    with open(query_file, "r") as file:
+        queries = file.readlines()
+
+    for query in queries:
+        try:
+            parts = query.strip().split(',')
+            if len(parts) != 6:
+                print(f"Skipping invalid query: {query.strip()}")
+                continue
+
+            usd_min, usd_max = float(parts[0]), float(parts[1])
+            rating_min, rating_max = float(parts[2]), float(parts[3])
+            date_min, date_max = map(lambda date: convert_date_to_numeric(date.strip()), parts[4:6])
+
+            range_min = [usd_min, rating_min, date_min]
+            range_max = [usd_max, rating_max, date_max]
+
+            range_min = [x if x is not None else -math.inf for x in range_min]
+            range_max = [x if x is not None else math.inf for x in range_max]
+
+            start = time.time()
+            results = octree.range_query(range_min, range_max)
+            end = time.time()
+
+            query_time = end - start
+            total_time += query_time
+
+            print(f"Query: {query.strip()} -> Results: {len(results)} in {query_time:.4f} seconds")
+
+        except Exception as e:
+            print(f"Error processing query '{query.strip()}': {e}")
+
+    print(f"Total time for all queries: {total_time:.4f} seconds")
+    return total_time
+
+
+def test_queries():
+    query_file = "queries.txt"  # Path to your file
+    data = pd.read_csv("simplified_coffee.csv")
+    data["review_date"] = data["review_date"].apply(convert_date_to_numeric)
+
+    # Build Octree
+    columns_for_splitting = ['100g_USD', 'rating', 'review_date']
+    points = list(data[columns_for_splitting].to_records(index=False))
+    full_data = data.values.tolist()
+
+    bounds = [
+        [data['100g_USD'].min(), data['100g_USD'].max()],
+        [data['rating'].min(), data['rating'].max()],
+        [data['review_date'].min(), data['review_date'].max()],
+    ]
+
+    octree = OctreeNode(bounds)
+
+    for point, row in zip(points, full_data):
+        octree.insert(point, row)
+
+    # Run batch queries
+    total_execution_time = run_batch_queries(query_file, octree, data)
+    print(f"Total execution time for all queries: {total_execution_time:.4f} seconds")
+
+
+test_queries()
