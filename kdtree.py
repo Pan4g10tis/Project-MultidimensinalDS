@@ -113,17 +113,27 @@ def range_query(node, range_min, range_max, depth=0, results=None):
 
 # Filter for the categorical arguments
 def filter_by_categorical_inputs(results, categorical_inputs, attribute_indices):
+    """
+    Filter results based on categorical conditions.
+    :param results: List of rows from the dataset.
+    :param categorical_inputs: Dictionary of categorical conditions (e.g., {"loc_country": ["United States"]}).
+    :param attribute_indices: Dictionary mapping attribute names to column indices.
+    :return: Filtered list of rows.
+    """
     filtered_results = []
     for result in results:
         match = True
-        for attribute, values in categorical_inputs.items():
-            idx = attribute_indices[attribute]
-            if result[idx] not in values:
-                match = False
-                break
+        for attr, values in categorical_inputs.items():
+            idx = attribute_indices[attr]
+            if attr in ["roaster", "roast", "loc_country", "origin"]:  # Non-numeric attributes
+                # Normalize the dataset value and search values for comparison
+                dataset_value = str(result[idx]).strip().lower()
+                search_values = [val.strip().lower() for val in values]
+                if dataset_value not in search_values:
+                    match = False
+                    break
         if match:
             filtered_results.append(result)
-
     return filtered_results
 
 
@@ -148,106 +158,144 @@ def lsh_query(words, N, filtered_results, review_index):
     return [(full_data[idx], distances[0][i]) for i, idx in enumerate(indices[0])]
 
 
-def kdtree_main():
-    # File reading and Formating
-    data = pd.read_csv("simplified_coffee.csv")
+def run_batch_queries(query_file, kd_tree, data):
+    total_time = 0
 
+    with open(query_file, "r") as file:
+        queries = file.readlines()
+
+    for query in queries:
+        try:
+            print(f"Processing query: '{query.strip()}'")
+            parts = query.strip().split(',')
+            if len(parts) != 6:
+                print(f"Skipping invalid query (wrong number of parts): {query.strip()}")
+                continue
+
+            usd_min, usd_max = float(parts[0]), float(parts[1])
+            rating_min, rating_max = float(parts[2]), float(parts[3])
+            date_min, date_max = map(lambda date: convert_date_to_numeric(date.strip()), parts[4:6])
+
+            print(f"Parsed USD range: {usd_min}, {usd_max}")
+            print(f"Parsed rating range: {rating_min}, {rating_max}")
+            print(f"Parsed date range: {date_min}, {date_max}")
+
+            range_min = [usd_min, rating_min, date_min]
+            range_max = [usd_max, rating_max, date_max]
+
+            range_min = [x if x is not None else -math.inf for x in range_min]
+            range_max = [x if x is not None else math.inf for x in range_max]
+
+            start = time.time()
+            results = range_query(kd_tree, range_min, range_max)
+            end = time.time()
+
+            query_time = end - start
+            total_time += query_time
+
+            print(f"Query: {query.strip()} -> Results: {len(results)} in {query_time:.4f} seconds")
+
+        except Exception as e:
+            print(f"Error processing query '{query.strip()}': {e}")
+
+    print(f"Total time for all queries: {total_time:.4f} seconds")
+    return total_time
+
+
+def test_queries():
+    query_file = "queries.txt"  # Path to your file
+    data = pd.read_csv("simplified_coffee.csv")
     data["review_date"] = data["review_date"].apply(convert_date_to_numeric)
 
+    # Build KD-tree
     columns_for_splitting = ['100g_USD', 'rating', 'review_date']
-    columns_for_full_data = data.columns  # Use all columns for the final nodes
-
-    # Create a list of tuples for KD-tree construction (only the selected columns for splitting)
     points = list(data[columns_for_splitting].to_records(index=False))
-    full_data = data[columns_for_full_data].values.tolist()  # Get all the data rows
-
+    full_data = data.values.tolist()
     kd_tree = build_kd_tree(points, full_data)
 
-    # Getting Attributes From User
-    available_columns = [col for col in data.columns if col != "name" and col != "review"]
+    # Run batch queries
+    total_execution_time = run_batch_queries(query_file, kd_tree, data)
+    print(f"Total execution time for all queries: {total_execution_time:.4f} seconds")
 
-    print("Available attributes for indexing:")
-    for i, col in enumerate(available_columns):
-        print(f"{i + 1}. {col}")
 
-    while True:
-        try:
-            # User input: indices of attributes to select
-            selected_indices = input("Enter the numbers of up to 4 attributes you want to index, "
-                                     "separated by commas (e.g., 1,3,5,7): ")
-            selected_indices = [int(idx.strip()) - 1 for idx in selected_indices.split(",")]
+def kdtree_main(selected_attributes=None, conditions=None):
+    """
+    Main function for KD-tree search.
+    :param selected_attributes: List of selected attributes (e.g., ["100g_USD", "rating"]).
+    :param conditions: Dictionary of conditions for the selected attributes.
+                      For numeric attributes, the value is a tuple (min_value, max_value).
+                      For non-numeric attributes, the value is a string or list of strings.
+    :return: List of matching rows.
+    """
+    if selected_attributes is None:
+        selected_attributes = []
+    if conditions is None:
+        conditions = {}
 
-            # Validate selection: check length and bounds
-            if len(selected_indices) > 4:
-                raise ValueError("You can select at most 4 attributes.")
-            if not all(0 <= idx < len(available_columns) for idx in selected_indices):
-                raise ValueError("One or more selected indices are out of range.")
-
-            # Map indices to attribute names
-            selected_attributes = [available_columns[idx] for idx in selected_indices]
-            print(f"You have selected the following attributes for indexing: {selected_attributes}")
-            break
-        except ValueError as e:
-            print(f"Invalid input: {e}. Please try again.")
+    # File reading and formatting
+    data = pd.read_csv("simplified_coffee.csv")
+    data["review_date"] = data["review_date"].apply(convert_date_to_numeric)
 
     # Define the type of each attribute
-    numeric_attributes = ['100g_USD', 'rating']
-    numeric_ranges = {}
-
+    numeric_attributes = ['100g_USD', 'rating', 'review_date']
     categorical_attributes = ['roaster', 'roast', 'loc_country', 'origin']
+
+    # Extract numeric and categorical conditions
+    numeric_ranges = {}
     categorical_inputs = {}
 
-    for attribute in numeric_attributes:
-        numeric_ranges[attribute] = [None, None]
+    for attr, value in conditions.items():
+        if attr in numeric_attributes:
+            # Numeric condition: value is a tuple (min_value, max_value)
+            numeric_ranges[attr] = value
+        elif attr in categorical_attributes:
+            # Categorical condition: value is a string or list of strings
+            if isinstance(value, str):
+                categorical_inputs[attr] = [val.strip().lower() for val in value.split(",")]
+            elif isinstance(value, list):
+                categorical_inputs[attr] = [val.strip().lower() for val in value]
 
-    review_date_range = [None, None]
+    # Build KD-tree
+    columns_for_splitting = ['100g_USD', 'rating', 'review_date']
+    points = list(data[columns_for_splitting].to_records(index=False))
+    full_data = data.values.tolist()  # Get all the data rows
+    kd_tree = build_kd_tree(points, full_data)
 
-    # Collect the data from the user
-    for attribute in numeric_attributes:
-        if attribute in selected_attributes:
-            numeric_ranges[attribute] = get_numeric_range(attribute)
+    # Prepare range_min and range_max for the range query
+    range_min = []
+    range_max = []
+    for col in columns_for_splitting:
+        if col in numeric_ranges:
+            min_val, max_val = numeric_ranges[col]
+            range_min.append(min_val if min_val is not None else -math.inf)
+            range_max.append(max_val if max_val is not None else math.inf)
+        else:
+            range_min.append(-math.inf)
+            range_max.append(math.inf)
 
-    # Handle review_date range input
-    if "review_date" in selected_attributes:
-        review_date_range = get_review_date_range_input()
-
-    for attribute in categorical_attributes:
-        if attribute in selected_attributes:
-            categorical_inputs[attribute] = get_string_input(attribute)
-
-    # Now you have all the values for the selected attributes, numeric ranges, and categorical inputs
-    print("\nYou have entered the following information:")
-    print(f"Numeric Ranges: {numeric_ranges}")
-    if review_date_range:
-        print(f"Review Date Range (numeric): {review_date_range}")
-    print(f"Categorical Inputs: {categorical_inputs}")
-
-    # Run the query
-    range_min = [numeric_ranges['100g_USD'][0], numeric_ranges['rating'][0], review_date_range[0]]
-    range_max = [numeric_ranges['100g_USD'][1], numeric_ranges['rating'][1], review_date_range[1]]
-
-    range_min = [x if x is not None else -math.inf for x in range_min]
-    range_max = [x if x is not None else math.inf for x in range_max]
-
+    # Perform range query
     start = time.time()
     results = range_query(kd_tree, range_min, range_max)
     end = time.time()
     length = end - start
 
+    # Filter results based on categorical conditions (if any)
     if categorical_inputs:
-        attribute_indices = {attribute: list(data.columns).index(attribute) for attribute in categorical_inputs}
+        attribute_indices = {attr: list(data.columns).index(attr) for attr in categorical_inputs}
         filtered_results = filter_by_categorical_inputs(results, categorical_inputs, attribute_indices)
         results_to_hash = filtered_results
-        print(f"Found {len(filtered_results)} results within the specified range and categorical inputs:")
-        # for result in filtered_results:
-            # print(result)
+        print(f"Found {len(filtered_results)} results within the specified range and categorical inputs.")
     else:
         results_to_hash = results
-        print(f"Found {len(results)} results within the specified range:")
-        # for result in results:
-            # print(result)
+        print(f"Found {len(results)} results within the specified range.")
 
-    print(length)
+    print(f"Search time: {length:.4f} seconds")
+
+    # Run test queries (unchanged)
+    test_queries()
+
+    # Return the matching rows
+    return results_to_hash
 
 
 '''
@@ -262,5 +310,3 @@ def kdtree_main():
     for result in final_results:
         print(result)
 '''
-
-kdtree_main()
