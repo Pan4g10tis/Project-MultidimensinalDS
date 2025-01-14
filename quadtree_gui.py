@@ -1,12 +1,12 @@
 import tkinter as tk
 from tkinter import ttk, messagebox
-from quadtree import octree_main  # Assuming the quadtree code is in a file named `quadtree.py`
+from quadtree import octree_main
 
 
-class QuadtreeGUI:
+class QUADTreeGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Quadtree Search GUI")
+        self.root.title("KD-Tree Search GUI")
 
         # Open the window in front of other apps
         self.root.lift()
@@ -42,9 +42,16 @@ class QuadtreeGUI:
             chk.grid(row=i // 2, column=i % 2, sticky="w", padx=5, pady=2)
             self.attr_vars[col] = var
 
+        # Add a separate checkbox for "review"
+        self.review_var = tk.BooleanVar()
+        review_chk = ttk.Checkbutton(attr_frame, text="review", variable=self.review_var,
+                                     command=lambda: self.update_conditions("review"))
+        review_chk.grid(row=len(self.available_columns) // 2, column=len(self.available_columns) % 2, sticky="w",
+                        padx=5, pady=2)
+
         # Frame for condition input
-        self.cond_frame = ttk.LabelFrame(self.root, text="Enter conditions. For the numeric attributes enter min value"
-                                                         " in the left box and max value in the right box. "
+        self.cond_frame = ttk.LabelFrame(self.root, text="Enter conditions. For the numeric attributes enter min value "
+                                                         "in the left box and max value in the right box. "
                                                          "For non-numeric attributes you can have multiple ones "
                                                          "separated by commas. Dates are in YYYYMM format as a number")
         self.cond_frame.pack(fill="x", padx=10, pady=10)
@@ -93,6 +100,25 @@ class QuadtreeGUI:
             else:
                 single_entry.grid_remove()
 
+        # Add entry fields for "review" keywords and number of nearest neighbors
+        self.review_label = ttk.Label(self.cond_frame, text="Review Keywords:")
+        self.review_label.grid(row=len(self.available_columns), column=0, padx=5, pady=2, sticky="e")
+
+        self.review_entry = ttk.Entry(self.cond_frame, width=20)
+        self.review_entry.grid(row=len(self.available_columns), column=1, padx=5, pady=2, sticky="w", columnspan=4)
+
+        self.num_neighbors_label = ttk.Label(self.cond_frame, text="Number of Nearest Neighbors:")
+        self.num_neighbors_label.grid(row=len(self.available_columns) + 1, column=0, padx=5, pady=2, sticky="e")
+
+        self.num_neighbors_entry = ttk.Entry(self.cond_frame, width=10)
+        self.num_neighbors_entry.grid(row=len(self.available_columns) + 1, column=1, padx=5, pady=2, sticky="w")
+
+        # Hide "review" entry fields initially
+        self.review_label.grid_remove()
+        self.review_entry.grid_remove()
+        self.num_neighbors_label.grid_remove()
+        self.num_neighbors_entry.grid_remove()
+
         # Search button
         search_btn = ttk.Button(self.root, text="Search", command=self.perform_search)
         search_btn.pack(pady=10)
@@ -109,7 +135,8 @@ class QuadtreeGUI:
         # Treeview widget for displaying results
         self.results_tree = ttk.Treeview(
             tree_container,
-            columns=("Name", "Roaster", "Roast", "Loc Country", "Origin", "100g_USD", "Rating", "Review Date"),
+            columns=(
+            "Name", "Roaster", "Roast", "Loc Country", "Origin", "100g_USD", "Rating", "Review Date", "Review"),
             show="headings"
         )
         self.results_tree.pack(side="left", fill="both", expand=True)
@@ -132,6 +159,7 @@ class QuadtreeGUI:
         self.results_tree.heading("Rating", text="Rating", command=lambda: self.sort_treeview("Rating", False))
         self.results_tree.heading("Review Date", text="Review Date",
                                   command=lambda: self.sort_treeview("Review Date", False))
+        self.results_tree.heading("Review", text="Review", command=lambda: self.sort_treeview("Review", False))
 
         # Set column widths
         self.results_tree.column("Name", width=150)
@@ -142,9 +170,24 @@ class QuadtreeGUI:
         self.results_tree.column("100g_USD", width=80)
         self.results_tree.column("Rating", width=80)
         self.results_tree.column("Review Date", width=100)
+        self.results_tree.column("Review", width=200)
 
     def update_conditions(self, selected_col):
         """Update the visibility of condition entry fields based on selected attributes."""
+        if selected_col == "review":
+            # Handle the "review" checkbox separately
+            if self.review_var.get():
+                self.review_label.grid()
+                self.review_entry.grid()
+                self.num_neighbors_label.grid()
+                self.num_neighbors_entry.grid()
+            else:
+                self.review_label.grid_remove()
+                self.review_entry.grid_remove()
+                self.num_neighbors_label.grid_remove()
+                self.num_neighbors_entry.grid_remove()
+            return
+
         # Get the current state of the checkbox
         is_selected = self.attr_vars[selected_col].get()
 
@@ -210,12 +253,29 @@ class QuadtreeGUI:
                 if value:
                     self.conditions[col] = value
 
-        if not self.conditions:
+        # Handle the "review" attribute separately
+        review_keywords = None
+        num_neighbors = None
+        if self.review_var.get():
+            review_keywords = self.review_entry.get().strip()
+            num_neighbors = self.num_neighbors_entry.get().strip()
+
+            if not review_keywords:
+                messagebox.showerror("Error", "Please enter review keywords.")
+                return
+
+            if not num_neighbors:
+                messagebox.showerror("Error", "Please enter the number of nearest neighbors.")
+                return
+
+            num_neighbors = int(num_neighbors)
+
+        if not self.conditions and not review_keywords:
             messagebox.showerror("Error", "No valid conditions provided.")
             return
 
-        # Call the Quadtree main function with selected attributes and conditions
-        results = octree_main(self.selected_attributes, self.conditions)
+        # Call the KD-tree main function with selected attributes, conditions, review keywords, and num_neighbors
+        results = octree_main(self.selected_attributes, self.conditions, review_keywords, num_neighbors)
         print("Results from octree_main:", results)  # Debug print
 
         # Display the results in the Treeview
@@ -253,3 +313,9 @@ class QuadtreeGUI:
 
         # Reverse the sort order for the next click
         self.results_tree.heading(col, command=lambda: self.sort_treeview(col, not reverse))
+
+
+if __name__ == "__main__":
+    root = tk.Tk()
+    app = QUADTreeGUI(root)
+    root.mainloop()
