@@ -1,7 +1,9 @@
+
 import pandas as pd
 import math
 import time
 from datetime import datetime
+from lsh import lsh_query
 
 
 # Helper to convert date to numeric
@@ -213,7 +215,7 @@ def test_queries():
 
 
 # Main Function
-def octree_main(selected_attributes=None, conditions=None):
+def octree_main(selected_attributes=None, conditions=None, review_keywords=None, num_neighbors=None):
     if selected_attributes is None:
         selected_attributes = []
     if conditions is None:
@@ -289,8 +291,12 @@ def octree_main(selected_attributes=None, conditions=None):
 
     print(f"Search time: {length:.4f} seconds")
 
-    # Run test queries (unchanged)
-    test_queries()
-
-    # Return the matching rows
-    return results_to_hash
+    # If review keywords are provided, perform LSH query
+    if review_keywords and num_neighbors:
+        review_index = list(data.columns).index('review')
+        lsh_results = lsh_query(review_keywords.split(), num_neighbors, results_to_hash, review_index)
+        # Extract the rows from the LSH results and keep all fields
+        final_results = [(row + [cosine_sim]) for row, cosine_sim in lsh_results]
+        return final_results
+    else:
+        return results_to_hash
