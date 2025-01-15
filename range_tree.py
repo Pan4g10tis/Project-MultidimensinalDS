@@ -456,6 +456,7 @@ def range_tree_main(selected_attributes=None, conditions=None):
         # Build the range tree based on the number of numeric attributes
         dim = len(numeric_attributes)
         print("Dimension of Range Tree:", dim)
+        data.sort() 
 
         if dim == 1:
             tree = ConstructRangeTree1d(data)
