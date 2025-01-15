@@ -1,6 +1,7 @@
 import csv
 from datetime import datetime
 import time
+from lsh import lsh_query
 
 
 class Node(object):
@@ -399,13 +400,15 @@ def run_3d_batch_queries(file_path):
     print(f"Total time for all queries: {total_time:.4f} seconds")
 
 
-def range_tree_main(selected_attributes=None, conditions=None):
+def range_tree_main(selected_attributes=None, conditions=None, review_keywords=None, num_neighbors=None):
     """
-    Main function for Range Tree search.
+    Main function for Range Tree search with LSH support for the 'review' column.
     :param selected_attributes: List of selected attributes (e.g., ["100g_USD", "rating"]).
     :param conditions: Dictionary of conditions for the selected attributes.
                       For numeric attributes, the value is a tuple (min_value, max_value).
                       For non-numeric attributes, the value is a string or list of strings.
+    :param review_keywords: List of keywords for LSH-based search on the 'review' column.
+    :param num_neighbors: Number of nearest neighbors to return for LSH-based search.
     :return: List of matching rows.
     """
     if selected_attributes is None:
@@ -415,6 +418,8 @@ def range_tree_main(selected_attributes=None, conditions=None):
 
     print("Selected Attributes:", selected_attributes)
     print("Conditions:", conditions)
+    print("Review Keywords:", review_keywords)
+    print("Number of Nearest Neighbors:", num_neighbors)
 
     # File reading and formatting
     headings = ['name', 'roaster', 'roast', 'loc_country', 'origin', '100g_USD', 'rating', 'review_date', 'review']
@@ -456,7 +461,7 @@ def range_tree_main(selected_attributes=None, conditions=None):
         # Build the range tree based on the number of numeric attributes
         dim = len(numeric_attributes)
         print("Dimension of Range Tree:", dim)
-        data.sort() 
+        data.sort()
 
         if dim == 1:
             tree = ConstructRangeTree1d(data)
@@ -508,7 +513,12 @@ def range_tree_main(selected_attributes=None, conditions=None):
 
     print("Filtered Results:", results)
 
-    # Run batch queries (unchanged)
-    run_3d_batch_queries("queries.txt")
+    # Perform LSH-based search on the 'review' column if keywords are provided
+    if review_keywords and num_neighbors:
+        print("Performing LSH-based search on the 'review' column...")
+        review_index = headings.index("review")  # Index of the 'review' column
+        lsh_results = lsh_query(review_keywords, num_neighbors, results, review_index)
+        results = lsh_results  # Replace results with LSH results
+        print("LSH Results:", results)
 
     return results
