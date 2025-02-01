@@ -1,7 +1,6 @@
 import pandas as pd
 import math
 from datetime import datetime
-import time
 from lsh import lsh_query
 
 
@@ -13,7 +12,6 @@ def convert_date_to_numeric(date_str):
         raise ValueError(f"Invalid date format: {date_str}")
 
 
-# Making The KD Tree
 class KDTreeNode:
     def __init__(self, point, full_data, left=None, right=None):
         self.point = point  # A 3D point for splitting (used for tree structure)
@@ -43,50 +41,6 @@ def build_kd_tree(points, full_data, depth=0):
                                           [full_data[i] for i in sorted_indices[median + 1:]], depth + 1))
 
 
-# TESTING ONLY
-def print_kd_tree(node, depth=0):
-    if node is not None:
-        print(depth, f"Node: {node.point}")
-        print_kd_tree(node.left, depth + 1)
-        print_kd_tree(node.right, depth + 1)
-
-
-# Get range inputs for numeric attributes
-def get_numeric_range(attribute_name):
-    while True:
-        try:
-            range_input = input(f"Enter the range for {attribute_name} as 'min,max' (e.g., 1,5): ")
-            min_value, max_value = [float(x.strip()) for x in range_input.split(',')]
-            return min_value, max_value
-        except ValueError:
-            print("Invalid input. Please enter the range as two numeric values separated by a comma.")
-
-
-# Get the review date input and convert it
-def get_review_date_range_input():
-    while True:
-        try:
-            date_range_input = input("Enter the review date range as 'min_date,max_date' in 'Month Year' format "
-                                     "(e.g., January 2023,December 2024): ")
-            min_date_str, max_date_str = [x.strip() for x in date_range_input.split(',')]
-            min_date = convert_date_to_numeric(min_date_str)
-            max_date = convert_date_to_numeric(max_date_str)
-            return min_date, max_date
-        except ValueError as e:
-            print(f"Invalid date format: {e}. Please try again.")
-
-
-# Get categorical string inputs for other attributes
-def get_string_input(attribute_name):
-    while True:
-        string_input = input(f"Enter the values for {attribute_name} separated by commas (e.g., value1,value2): ").strip()
-        if string_input:
-            return [val.strip() for val in string_input.split(",")]
-        else:
-            print("Input cannot be empty. Please try again.")
-
-
-# Run the range query
 def range_query(node, range_min, range_max, depth=0, results=None):
     if results is None:
         results = []
@@ -110,7 +64,6 @@ def range_query(node, range_min, range_max, depth=0, results=None):
     return results
 
 
-# Filter for the categorical arguments
 def filter_by_categorical_inputs(results, categorical_inputs, attribute_indices):
     """
     Filter results based on categorical conditions.
@@ -134,66 +87,6 @@ def filter_by_categorical_inputs(results, categorical_inputs, attribute_indices)
         if match:
             filtered_results.append(result)
     return filtered_results
-
-
-def run_batch_queries(query_file, kd_tree, data):
-    total_time = 0
-
-    with open(query_file, "r") as file:
-        queries = file.readlines()
-
-    for query in queries:
-        try:
-            print(f"Processing query: '{query.strip()}'")
-            parts = query.strip().split(',')
-            if len(parts) != 6:
-                print(f"Skipping invalid query (wrong number of parts): {query.strip()}")
-                continue
-
-            usd_min, usd_max = float(parts[0]), float(parts[1])
-            rating_min, rating_max = float(parts[2]), float(parts[3])
-            date_min, date_max = map(lambda date: convert_date_to_numeric(date.strip()), parts[4:6])
-
-            print(f"Parsed USD range: {usd_min}, {usd_max}")
-            print(f"Parsed rating range: {rating_min}, {rating_max}")
-            print(f"Parsed date range: {date_min}, {date_max}")
-
-            range_min = [usd_min, rating_min, date_min]
-            range_max = [usd_max, rating_max, date_max]
-
-            range_min = [x if x is not None else -math.inf for x in range_min]
-            range_max = [x if x is not None else math.inf for x in range_max]
-
-            start = time.time()
-            results = range_query(kd_tree, range_min, range_max)
-            end = time.time()
-
-            query_time = end - start
-            total_time += query_time
-
-            print(f"Query: {query.strip()} -> Results: {len(results)} in {query_time:.4f} seconds")
-
-        except Exception as e:
-            print(f"Error processing query '{query.strip()}': {e}")
-
-    print(f"Total time for all queries: {total_time:.4f} seconds")
-    return total_time
-
-
-def test_queries():
-    query_file = "queries.txt"  # Path to your file
-    data = pd.read_csv("simplified_coffee.csv")
-    data["review_date"] = data["review_date"].apply(convert_date_to_numeric)
-
-    # Build KD-tree
-    columns_for_splitting = ['100g_USD', 'rating', 'review_date']
-    points = list(data[columns_for_splitting].to_records(index=False))
-    full_data = data.values.tolist()
-    kd_tree = build_kd_tree(points, full_data)
-
-    # Run batch queries
-    total_execution_time = run_batch_queries(query_file, kd_tree, data)
-    print(f"Total execution time for all queries: {total_execution_time:.4f} seconds")
 
 
 def kdtree_main(selected_attributes=None, conditions=None, review_keywords=None, num_neighbors=None):
@@ -242,22 +135,15 @@ def kdtree_main(selected_attributes=None, conditions=None, review_keywords=None,
             range_max.append(math.inf)
 
     # Perform range query
-    start = time.time()
     results = range_query(kd_tree, range_min, range_max)
-    end = time.time()
-    length = end - start
 
     # Filter results based on categorical conditions (if any)
     if categorical_inputs:
         attribute_indices = {attr: list(data.columns).index(attr) for attr in categorical_inputs}
         filtered_results = filter_by_categorical_inputs(results, categorical_inputs, attribute_indices)
         results_to_hash = filtered_results
-        print(f"Found {len(filtered_results)} results within the specified range and categorical inputs.")
     else:
         results_to_hash = results
-        print(f"Found {len(results)} results within the specified range.")
-
-    print(f"Search time: {length:.4f} seconds")
 
     # If review keywords are provided, perform LSH query
     if review_keywords and num_neighbors:
